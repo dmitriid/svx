@@ -1,0 +1,39 @@
+<script language="elixir">
+  alias Example.Thermostat
+
+  def mount(_params, _session, socket) do
+    if connected?(socket), do: Process.send_after(self(), :update, 1000)
+
+    case Thermostat.get_reading() do
+      {:ok, temperature} ->
+        {:ok, assign(socket, temperature: temperature)}
+
+      {:error, _reason} ->
+        {:ok, redirect(socket, to: "/error")}
+    end
+  end
+
+  def handle_info(:update, socket) do
+    Process.send_after(self(), :update, 1000)
+    {:ok, temperature} = Thermostat.get_reading()
+    {:noreply, assign(socket, :temperature, temperature)}
+  end
+</script>
+
+<p class={"example temp-#{ @temperature > 30 }"}>
+  Current temperature: <%= @temperature %>
+</p>
+
+<style>
+  .example {
+    font-size: 40pt;
+  }
+
+  .temp-true {
+    color: orange;
+  }
+
+  .temp-false {
+    color: blue;
+  }
+</style>

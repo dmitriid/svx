@@ -1,0 +1,15 @@
+/* --- ExampleWeb.Live.Thermostat --- */
+
+  .example {
+    font-size: 40pt;
+  }
+
+  .temp-true {
+    color: orange;
+  }
+
+  .temp-false {
+    color: blue;
+  }
+
+
