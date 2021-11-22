@@ -31,6 +31,14 @@ defmodule Svx.Compiler do
   def compile_and_reload(files) do
     Code.compiler_options(ignore_module_conflict: true)
 
+    app_name = Mix.Project.config()[:app]
+
+    prelude = case Application.fetch_env(app_name, :svx) do
+      :error -> []
+      {:ok, list} -> Keyword.get(list, :prelude, [])
+    end
+
+
     modules = for template_with_path <- files do
       module_name = module_name_from_path(template_with_path)
 
@@ -42,7 +50,10 @@ defmodule Svx.Compiler do
 
       module = """
       defmodule #{module_name} do
-        use Phoenix.LiveView
+        #{
+          prelude
+          |> Enum.join("\n")
+        }
 
         #{parsed.module}
 

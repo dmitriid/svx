@@ -21,7 +21,7 @@ A PoC for single-file components for [Phoenix](https://www.phoenixframework.org)
 ```elixir
 def deps do
   [
-    {:svx, "~> 0.1.6"}
+    {:svx, "~> 0.2.0"}
   ]
 end
 ```
@@ -37,16 +37,24 @@ end
   end
 ```
 
-3. In `config/config.exs` add `:svx` to `:reloadable_compilers` under `Endpoint`:
+3. In `config/config.exs` add add `:reloadable_compilers` under `Endpoint`:
 
 ```
 config :your_app, YourAppWeb.Endpoint,
   #...
   live_view: [signing_salt: "OiSdJKnT"],
-  reloadable_compilers: [:svx]
+  reloadable_compilers: reloadable_compilers: Mix.compilers() ++ [:svx]
 ```
 
-4. In `config/dev.exs` set Phoenix to live-reload your templates:
+4. Add `:prelude` config to `config/config.exs`. Here you can add a list of imports, requires, uses etc. that you want
+   to appear at the top of your views. You must have at least `"use YourAppWeb, :live_view"` here:   
+
+```elixir
+config :your_app, :svx,
+  prelude: ["use YourAppWeb, :live_view"]
+```
+
+5. In `config/dev.exs` set Phoenix to live-reload your templates:
 
 ```elixir
 config :your_app, YourAppWeb.Endpoint,
@@ -58,8 +66,8 @@ config :your_app, YourAppWeb.Endpoint,
        ]
 ```
 
-5. Add `@import "./generated.css";` to `assets/css/app.css`
-6. Create your views as `.lsvx` files anywhere in `lib/your_app_web`
+6. Add `@import "./generated.css";` to `assets/css/app.css`
+7. Create your views as `.lsvx` files anywhere in `lib/your_app_web`
 
 ## How to
 
