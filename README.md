@@ -21,7 +21,7 @@ A PoC for single-file components for [Phoenix](https://www.phoenixframework.org)
 ```elixir
 def deps do
   [
-    {:svx, "~> 0.3.0"}
+    {:svx, "~> 0.3.1"}
   ]
 end
 ```
