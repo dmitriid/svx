@@ -13,9 +13,10 @@ defmodule Example.Application do
       # Start the PubSub system
       {Phoenix.PubSub, name: Example.PubSub},
       # Start the Endpoint (http/https)
-      ExampleWeb.Endpoint
+      ExampleWeb.Endpoint,
       # Start a worker by calling: Example.Worker.start_link(arg)
       # {Example.Worker, arg}
+      {Svx.Compiler, [path: "lib/example_web/live", namespace: ExampleWeb.Live]}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

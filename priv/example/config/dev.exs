@@ -49,7 +49,7 @@ config :example, ExampleWeb.Endpoint,
     patterns: [
       ~r"priv/static/.*(js|css|png|jpeg|jpg|gif|svg)$",
       ~r"lib/example_web/(live|views)/.*(ex)$",
-      ~r"lib/example_web/(live|views)/.*(svx)$",
+      #~r"lib/example_web/(live|views)/.*(svx)$",
       ~r"lib/example_web/templates/.*(eex)$"
     ]
   ]

@@ -1,5 +1,10 @@
 defmodule Svx.Compiler do
   require Logger
+  use GenServer
+
+  @extensions ~w(.lsvx .svx)
+
+  defstruct [:path, :namespace, :css_output_path, :js_output_path, :module_map]
 
   defmodule ParseError do
     @moduledoc false
@@ -27,78 +32,254 @@ defmodule Svx.Compiler do
     end
   end
 
+  ##-------------------------------------------------------------------------##
+  # GenServer
+  ##-------------------------------------------------------------------------##
 
-  def compile_and_reload(files) do
-    Code.compiler_options(ignore_module_conflict: true)
+  def start_link(opts \\ []) do
+    opts[:path] || raise ArgumentError, message: "invalid option :path"
+    opts[:namespace] || raise ArgumentError, message: "invalid option :namespace"
 
-    app_name = Mix.Project.config()[:app]
-
-    prelude = case Application.fetch_env(app_name, :svx) do
-      :error -> []
-      {:ok, list} -> Keyword.get(list, :prelude, [])
-    end
-
-
-    modules = for template_with_path <- files do
-      module_name = module_name_from_path(template_with_path)
-
-      Logger.info("Compiling #{module_name} (#{template_with_path})")
-
-      {:ok, content} = File.read(template_with_path)
-
-      parsed = collect_content(content, template_with_path)
-
-      module = """
-      defmodule #{module_name} do
-        #{
-          prelude
-          |> Enum.join("\n")
-        }
-
-        #{parsed.module}
-
-        def render(assigns) do
-        ~H\"\"\"
-      #{parsed.content}
-      \"\"\"
-        end
-      end
-      """
-      Code.compile_string(module, template_with_path)
-      {module_name, parsed}
-    end
-
-    Code.compiler_options(ignore_module_conflict: false)
-    modules
+    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  defp module_name_from_path(path) do
-    module_name = path
-                  |> Path.relative_to("lib/")
-                  |> Path.rootname() # "some/path_chunks/with/file_name"
-                  |> Path.split() # ["some", "path_chunks", "with", "file_name"]
-      # convert ["some", "path_chunks", "with", "file_name"]
-      # to ["Some", "PathChunks", "With", "FileName"]
-                  |> Enum.map(
-                       fn chunk ->
-                         # chunk may contain underscore
-                         # we split them and uppercase them
-                         # path_chunk -> ["path", "chunk"] -> ["Path", "Chunk"] -> PathChunk
-                         chunk
-                         |> String.split("_")
-                         |> Enum.map(
-                              fn lowercase ->
-                                with <<first :: utf8, rest :: binary>> <- lowercase,
-                                     do: String.upcase(<<first :: utf8>>) <> rest
-                              end
-                            )
-                         |> Enum.join("")
-                       end
-                     )
-                  |> Enum.join(".") # Some.PathChunk.With.Filename
+  @impl true
+  @spec init(%__MODULE__{}) :: {:ok, %__MODULE__{}}
+  def init(opts) do
+    assets_path = Path.absname("")
+                  |> Path.join("assets")
 
-    module_name
+    default_css_output_path = assets_path
+                              |> Path.join("css")
+                              |> Path.join("generated.css")
+
+    default_js_output_path = assets_path
+                             |> Path.join("js")
+                             |> Path.join("generated.js")
+
+    css_output_path = opts[:css_output_path] || default_css_output_path
+    js_output_path = opts[:js_output_path] || default_js_output_path
+
+    path = Path.absname(opts[:path])
+
+    state = %__MODULE__{
+      path: path,
+      namespace: opts[:namespace],
+      css_output_path: css_output_path,
+      js_output_path: js_output_path
+    }
+
+    Logger.info("Svx starting with the following options: #{inspect state}")
+
+    {:ok, _pid} =
+      Sentix.start_link(:templates, [path], recursive: true, includes: "*.l?svx")
+
+    Sentix.subscribe(:templates)
+
+    module_map = compile_all(path, state)
+
+    {
+      :ok,
+      state
+      |> Map.put(:module_map, module_map)
+    }
   end
+
+  ##-------------------------------------------------------------------------##
+  # File system events
+  ##-------------------------------------------------------------------------##
+
+  @impl true
+  def handle_info({_pid, {:fswatch, :file_event}, {file_path, event_list}}, %{module_map: compiled} = state) do
+
+    case Path.extname(file_path) in @extensions do
+      true -> cond do
+                :updated in event_list or :created in event_list ->
+                  compiled = Map.merge(compiled, compile_many([file_path], state))
+                  if css_changed?(file_path, compiled, state) do
+                    Logger.info("#{Map.get(compiled, file_path).module} will update css")
+                    update_css(compiled, state)
+                  end
+                  {:noreply, %{state | module_map: compiled}}
+                :removed in event_list ->
+                  # TODO: remove module
+                  {:noreply, state}
+              end
+      false -> {:noreply, state}
+    end
+
+  end
+
+  ##-------------------------------------------------------------------------##
+  # Internal functionality
+  ##-------------------------------------------------------------------------##
+
+  def compile_all(path, state) do
+    Logger.info("Recompiling all files in #{path}")
+    compiled = ls_r(path)
+               |> Enum.chunk_every(4)
+               |> Enum.filter(fn file -> Path.extname(file) in @extensions end)
+               |> Enum.map(
+                    &Task.async(fn -> compile_many(&1, state) end)
+                  )
+               |> Task.await_many()
+               |> Enum.reduce(
+                    %{},
+                    fn results, acc ->
+                      acc
+                      |> Map.merge(results)
+                    end
+                  )
+
+    update_css(compiled, state)
+
+    compiled
+  end
+
+  def compile_many(files, state) do
+    files
+    |> Enum.reduce(
+         %{},
+         fn file, acc ->
+           relative_path = file
+                           |> Path.relative_to(state.path)
+
+           module_name = to_module_name(
+             relative_path,
+             state.namespace
+           )
+
+           Logger.info("Compiling #{module_name} (#{relative_path})")
+
+           {:ok, content} = File.read(file)
+
+           result = get_module(file, module_name, content, is_live?(file))
+
+           Code.compiler_options(ignore_module_conflict: true)
+           Code.compile_quoted(result.module, file)
+           Code.compiler_options(ignore_module_conflict: false)
+
+           Map.put(
+             acc,
+             file,
+             result
+             |> Map.put(:module, module_name)
+           )
+         end
+       )
+  end
+
+  defp ls_r(path) do
+    cond do
+      File.regular?(path) ->
+        [path]
+
+      File.dir?(path) ->
+        File.ls!(path)
+        |> Enum.map(&Path.join(path, &1))
+        |> Enum.map(&ls_r/1)
+        |> Enum.concat()
+
+      true ->
+        []
+    end
+  end
+
+  defp to_module_name(path, namespace) do
+    module_name =
+      path
+      #|> Path.relative_to("lib/")
+      |> Path.rootname() # "some/path_chunks/with/file_name"
+      |> Path.split() # ["some", "path_chunks", "with", "file_name"]
+        # convert ["some", "path_chunks", "with", "file_name"]
+        # to ["Some", "PathChunks", "With", "FileName"]
+      |> Enum.map(
+           fn chunk ->
+             # chunk may contain underscore
+             # we split them and uppercase them
+             # path_chunk -> ["path", "chunk"] -> ["Path", "Chunk"] -> PathChunk
+             chunk
+             |> String.split("_")
+             |> Enum.map(
+                  fn lowercase ->
+                    with <<first :: utf8, rest :: binary>> <- lowercase,
+                         do: String.upcase(<<first :: utf8>>) <> rest
+                  end
+                )
+             |> Enum.join("")
+           end
+         )
+      |> Enum.join(".")
+    "#{namespace}.#{module_name}"
+  end
+
+  defp is_live?(file), do: Path.extname(file) == ".lsvx"
+
+  defp get_module(_file, _module_name, _content, false) do
+#    module = quote do
+#      defmodule unquote(module_name) do
+#        require EEx
+#
+#        EEx.function_from_string(:def, :render, unquote(content), [:assigns], [engine: Phoenix.HTML.Engine])
+#      end
+#    end
+#
+#    %{module: module, css: ""}
+    raise "Not implemented yet"
+  end
+
+  defp get_module(file, module_name, content, true) do
+    parsed = collect_content(content, file)
+
+    module = """
+
+             defmodule #{module_name} do
+
+
+               #{parsed.module}
+
+               def render(assigns) do
+               ~H\"\"\"
+             #{parsed.content}
+             \"\"\"
+               end
+             end
+             """
+             |> Code.string_to_quoted()
+             |> elem(1)
+
+    %{module: module, css: IO.iodata_to_binary(parsed.css)}
+  end
+
+  defp update_css(compiled, %{css_output_path: output_path}) do
+    out = compiled
+          |> Enum.reduce(
+               "",
+               fn ({_, %{css: css}}, acc) ->
+                 case css
+                      |> IO.iodata_to_binary()
+                      |> String.trim() do
+                   "" -> acc
+                   trimmed -> acc
+                              <> "\n\n"
+                              <> trimmed
+                 end
+               end
+             )
+
+    File.write(output_path, out)
+  end
+
+  defp css_changed?(file_path, compiled, %{module_map: old_compiled}) do
+    case Map.get(old_compiled, file_path) do
+      nil -> true
+      %{css: old_css} -> Map.get(compiled, file_path).css != old_css
+    end
+  end
+
+  ##-------------------------------------------------------------------------##
+  # Parse .lsvx
+  ##-------------------------------------------------------------------------##
 
   defp collect_content(content, file) do
     {:ok, eex_regex} = Regex.compile("(<%)(.|[\r\n\s])+(%>)", [:unicode, :ungreedy])
