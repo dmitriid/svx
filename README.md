@@ -26,6 +26,8 @@ def deps do
 end
 ```
 
+**Note**: Requires `fswatch` (`apt-get fswatch` or `brew install fswatch`)
+
 2. In `lib/<you_app>/application.ex` add Svx to apps that you start:
 
 ```
