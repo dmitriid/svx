@@ -43,7 +43,7 @@ defmodule Example.MixProject do
       {:telemetry_poller, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:plug_cowboy, "~> 2.5"},
-      {:svx, "~> 0.3.1"}
+      {:svx, "~> 0.3.2"}
     ]
   end
 
