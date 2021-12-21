@@ -117,8 +117,8 @@ defmodule Svx.Compiler do
   def compile_all(path, state) do
     Logger.info("Recompiling all files in #{path}")
     compiled = ls_r(path)
-               |> Enum.chunk_every(4)
                |> Enum.filter(fn file -> Path.extname(file) in @extensions end)
+               |> Enum.chunk_every(4)
                |> Enum.map(
                     &Task.async(fn -> compile_many(&1, state) end)
                   )
