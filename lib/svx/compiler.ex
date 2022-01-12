@@ -234,6 +234,7 @@ defmodule Svx.Compiler do
     module = """
 
              defmodule #{module_name} do
+               import Phoenix.LiveView.Helpers
 
 
                #{parsed.module}
