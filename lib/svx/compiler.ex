@@ -151,20 +151,55 @@ defmodule Svx.Compiler do
 
            Logger.info("Compiling #{module_name} (#{relative_path})")
 
-           {:ok, content} = File.read(file)
+           try do
+             {:ok, content} = File.read(file)
 
-           result = get_module(file, module_name, content, is_live?(file))
+             result = get_module(file, module_name, content, is_live?(file))
 
-           Code.compiler_options(ignore_module_conflict: true)
-           Code.compile_quoted(result.module, file)
-           Code.compiler_options(ignore_module_conflict: false)
+             Code.compiler_options(ignore_module_conflict: true)
+             Code.compile_quoted(result.module, file)
+             Code.compiler_options(ignore_module_conflict: false)
 
-           Map.put(
-             acc,
-             file,
-             result
-             |> Map.put(:module, module_name)
-           )
+             Map.put(
+               acc,
+               file,
+               result
+               |> Map.put(:module, module_name)
+             )
+           rescue
+             e ->
+               formatted = Exception.format(:error, e, __STACKTRACE__)
+               Logger.error(formatted)
+
+               module = """
+                        defmodule #{module_name} do
+                          use Phoenix.LiveView
+                          import Phoenix.LiveView.Helpers
+                          import Phoenix.View
+
+
+                          def render(assigns) do
+                          ~H\"\"\"
+                        <pre style=\"font-size: 1.2em; color: red; padding: 0.5em; width: 80ch; margin:auto; white-space: pre-wrap; overflow-wrap: break-word\">
+                        #{formatted}
+                        </pre>
+                        \"\"\"
+                          end
+                        end
+                        """
+                        |> Code.string_to_quoted()
+                        |> elem(1)
+
+               Code.compiler_options(ignore_module_conflict: true)
+               Code.compile_quoted(module, file)
+               Code.compiler_options(ignore_module_conflict: false)
+
+               Map.put(
+                 acc,
+                 file,
+                 %{module: module, css: [], module_name: module_name}
+               )
+           end
          end
        )
   end
@@ -232,10 +267,8 @@ defmodule Svx.Compiler do
     parsed = collect_content(content, file)
 
     module = """
-
              defmodule #{module_name} do
                import Phoenix.LiveView.Helpers
-
 
                #{parsed.module}
 

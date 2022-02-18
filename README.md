@@ -8,7 +8,8 @@ A PoC for single-file components for [Phoenix](https://www.phoenixframework.org)
 - [How to](#how-to)
   - [Component structure](#component-structure) 
   - [Module names](#module-names)
-  - [Generated CSS]()
+  - [Generated CSS](#generated-css)
+  - [Errors](#errors)
   - [Example](#example)
 - [Generated CSS](#generated-css)
 - [Caveats](#caveats)
@@ -88,6 +89,11 @@ Svx compiler will output component names to stdout, so you you can see what name
 All code in `<style></style>` is extracted and placed at `assets/css/generated.css`.
 The easiest way to make sure that it's reloaded when you change it is to add
 `@import "./generated.css";` to `assets/css/app.css`
+
+### Errors
+
+If you have errors in your markup, Svx will still attempt to compile your component,
+but will replace component content with the error from Heex tokenizer.
 
 ### Example
 
