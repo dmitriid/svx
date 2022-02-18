@@ -168,15 +168,13 @@ defmodule Svx.Compiler do
              )
            rescue
              e ->
-               formatted = Exception.format(:error, e, __STACKTRACE__)
+               formatted = Exception.format(:error, e, __STACKTRACE__) |> Phoenix.HTML.html_escape |> elem(1)
                Logger.error(formatted)
 
                module = """
                         defmodule #{module_name} do
                           use Phoenix.LiveView
                           import Phoenix.LiveView.Helpers
-                          import Phoenix.View
-
 
                           def render(assigns) do
                           ~H\"\"\"

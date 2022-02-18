@@ -93,7 +93,8 @@ The easiest way to make sure that it's reloaded when you change it is to add
 ### Errors
 
 If you have errors in your markup, Svx will still attempt to compile your component,
-but will replace component content with the error from Heex tokenizer.
+but will replace component content with the error from Heex tokenizer or other errors
+that may arise when compiling the component.
 
 ### Example
 

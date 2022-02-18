@@ -5,7 +5,7 @@ defmodule Svx.MixProject do
     [
       app: :svx,
       name: "Svx",
-      version: "0.4.0",
+      version: "0.4.1",
       description: "A PoC for single-file components for Phoenix LiveView",
       elixir: "~> 1.12",
       start_permanent: Mix.env() == :prod,
